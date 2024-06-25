@@ -10,13 +10,13 @@ app = Flask(__name__)
 
 
 
-def api_request():
+def api_request(sport):
 
     # An api key is emailed to you when you sign up to a plan
     # Get a free API key at https://api.the-odds-api.com/
     API_KEY = '13584f961a551b823507d02641673702'
 
-    SPORT = 'soccer_uefa_european_championship'  # use the sport_key from the /sports endpoint below, or use 'upcoming' to see the next 8 games across all sports
+    SPORT = sport  # use the sport_key from the /sports endpoint below, or use 'upcoming' to see the next 8 games across all sports
 
     REGIONS = 'us'  # uk | us | eu | au. Multiple can be specified if comma delimited
 
@@ -276,9 +276,10 @@ def format_game_results(game_results):
 def get_odds():
     if request.method == 'POST':
         # Get user inputs from form POST request
+        sport = request.form.get('sport')
         date = request.form.get('date')
         bookmakers_input = request.form.get('bookmakers')
-        json = api_request()
+        json = api_request(sport)
         df = create_df(json)
         if bookmakers_input.lower() == 'none' or not bookmakers_input.strip():
             bookmaker = None
@@ -295,6 +296,7 @@ def get_odds():
 
     return '''
         <form method="post">
+            Sport: <input type="text" name="sport"><br>
             Date: <input type="text" name="date"><br>
             Bookmakers (comma separated): <input type="text" name="bookmakers"><br>
             <input type="submit" value="Submit"><br>

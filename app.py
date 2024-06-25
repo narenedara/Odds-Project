@@ -4,17 +4,17 @@ from datetime import datetime
 import pytz
 import pandas as pd
 import numpy as np
-
+import os
 app = Flask(__name__)
 
 
-
+API_KEY = os.getenv('API_KEY')
 
 def api_request(sport):
 
     # An api key is emailed to you when you sign up to a plan
     # Get a free API key at https://api.the-odds-api.com/
-    API_KEY = '13584f961a551b823507d02641673702'
+    # API_KEY = '13584f961a551b823507d02641673702'
 
     SPORT = sport  # use the sport_key from the /sports endpoint below, or use 'upcoming' to see the next 8 games across all sports
 
@@ -33,27 +33,12 @@ def api_request(sport):
     #
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-    # sports_response = requests.get(
-    #     'https://api.the-odds-api.com/v4/sports',
-    #     params={
-    #         'api_key': API_KEY
-    #     }
-    # )
+     # if sports_response.status_code != 200:
+     #     print(f'Failed to get sports: status_code {sports_response.status_code}, response body {sports_response.text}')
+     #
+     # else:
+     #     print('List of in season sports:', sports_response.json())
 
-    # if sports_response.status_code != 200:
-    #     print(f'Failed to get sports: status_code {sports_response.status_code}, response body {sports_response.text}')
-
-    # else:
-    #     print('List of in season sports:', sports_response.json())
-
-    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-    #
-    # Now get a list of live & upcoming games for the sport you want, along with odds for different bookmakers
-    # This will deduct from the usage quota
-    # The usage quota cost = [number of markets specified] x [number of regions specified]
-    # For examples of usage quota costs, see https://the-odds-api.com/liveapi/guides/v4/#usage-quota-costs
-    #
-    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
     odds_response = requests.get(
         f'https://api.the-odds-api.com/v4/sports/{SPORT}/odds',
@@ -78,6 +63,19 @@ def api_request(sport):
         print('Remaining requests', odds_response.headers['x-requests-remaining'])
         print('Used requests', odds_response.headers['x-requests-used'])
     return odds_json
+
+def get_sports():
+    sports_response = requests.get('https://api.the-odds-api.com/v4/sports', params={'api_key': API_KEY})
+
+    if sports_response.status_code != 200:
+        print(f'Failed to get sports: status_code {sports_response.status_code}, response body {sports_response.text}')
+    else:
+        sports_list = []
+        sports_data = sports_response.json()
+        for sport in sports_data:
+            if not sport['has_outrights'] and sport['active']:
+                sports_list.append(sport['key'])
+        return sports_list
 
 def tuple_to_list(x):
     if isinstance(x, tuple):
@@ -110,6 +108,7 @@ def create_df(odds_json):
             # Initialize lists if bookmaker is not yet in the dictionary
             for market in bookmaker['markets']:
                 game_odds = [None, None, None]
+                draw_exists = False
                 for outcome in market['outcomes']:
                     if outcome['name'] == home_team:
                         game_odds[0] = int(outcome['price'])
@@ -117,7 +116,10 @@ def create_df(odds_json):
                         game_odds[1] = int(outcome['price'])
                     elif outcome['name'] == 'Draw':
                         game_odds[2] = int(outcome['price'])
-                    bookmaker_data[bookmaker_name].append(game_odds)
+                        draw_exists = True
+                if not draw_exists and len(game_odds) > 2:
+                    game_odds.pop(2)
+                bookmaker_data[bookmaker_name].append(game_odds)
     utc_tz = pytz.utc
     # Define Eastern Standard Timezone (EST)
     est_tz = pytz.timezone('America/New_York')
@@ -176,32 +178,40 @@ def get_rows(row, user_date):
 def process_odds_dataframe(odds_df):
     # Convert odds values from string to list of integers
     results = []
-    bookmakers_names=odds_df.columns
+    bookmakers_names = odds_df.columns
     for index, game in odds_df.iterrows():
-        final_dict={}
+        final_dict = {}
         match_name = index
-        final_dict['Game']=match_name
-        results_list=[]
-#         print(match_name,row)
-        home_odds_list=[]
-        away_odds_list=[]
-        draw_odds_list=[]
+        final_dict['Game'] = match_name
+        results_list = []
+        #         print(match_name,row)
+        home_odds_list = []
+        away_odds_list = []
+        draw_odds_list = []
+        draw_exists = False
+
         for bookmaker in bookmakers_names:
             home_odds_list.append(game[bookmaker][0])
             away_odds_list.append(game[bookmaker][1])
-            draw_odds_list.append(game[bookmaker][2])
-        list_of_odds=[home_odds_list,away_odds_list,draw_odds_list]
-        list_of_results=['home_win','away_win','draw']
-        for lister,result_type in zip(list_of_odds,list_of_results):
-            odds_dict={}
+            # Check if the draw odds exist for this bookmaker
+            if len(game[bookmaker]) == 3:
+                draw_odds_list.append(game[bookmaker][2])
+                draw_exists = True
+        list_of_odds = [home_odds_list, away_odds_list]
+        list_of_results = ['home_win', 'away_win']
+        if draw_exists:
+            list_of_odds.append(draw_odds_list)
+            list_of_results.append('draw')
+        for lister, result_type in zip(list_of_odds, list_of_results):
+            odds_dict = {}
             lister_odds_list = pd.Series(lister)
-            lister_max=lister_odds_list.max()
+            lister_max = lister_odds_list.max()
             indices = lister_odds_list[lister_odds_list == lister_max].index.tolist()
-            lister_bookmaker=[bookmakers_names[i] for i in indices]
-            odds_dict[result_type]=float(lister_max)
-            odds_dict['bookmaker']=lister_bookmaker
+            lister_bookmaker = [bookmakers_names[i] for i in indices]
+            odds_dict[result_type] = float(lister_max)
+            odds_dict['bookmaker'] = lister_bookmaker
             results_list.append(odds_dict)
-        final_dict['Results']=results_list
+        final_dict['Results'] = results_list
         results.append(final_dict)
     return results
 
@@ -274,8 +284,10 @@ def format_game_results(game_results):
 
 @app.route('/', methods=['GET', 'POST'])
 def get_odds():
+    sports_list=get_sports()
     if request.method == 'POST':
         # Get user inputs from form POST request
+
         sport = request.form.get('sport')
         date = request.form.get('date')
         bookmakers_input = request.form.get('bookmakers')
@@ -291,17 +303,34 @@ def get_odds():
             formatted_result = format_game_results(result)
             return formatted_result
         except Exception as e:
-            return jsonify({'error': str(e)})
+            return "Sorry, odds for this date have not been released or there are no events on this day"
 
-
-    return '''
-        <form method="post">
-            Sport: <input type="text" name="sport"><br>
-            Date: <input type="text" name="date"><br>
-            Bookmakers (comma separated): <input type="text" name="bookmakers"><br>
-            <input type="submit" value="Submit"><br>
-        </form>
-    '''
+    return render_template_string('''
+            <form method="post">
+                Sport: <input type="text" name="sport"><br>
+                Date: <input type="text" name="date"><br>
+                Bookmakers (comma separated): <input type="text" name="bookmakers"><br>
+                <input type="submit" value="Submit"><br>
+            </form>
+            <button type="button" onclick="showList()">Show Sports List</button>
+            <div id="sportsList" style="display:none;">
+                <ul>
+                    {% for sport in sports_list %}
+                    <li>{{ sport }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <script>
+                function showList() {
+                    var sportsList = document.getElementById("sportsList");
+                    if (sportsList.style.display === "none") {
+                        sportsList.style.display = "block";
+                    } else {
+                        sportsList.style.display = "none";
+                    }
+                }
+            </script>
+        ''', sports_list=sports_list)
 
 if __name__ == '__main__':
     app.run()

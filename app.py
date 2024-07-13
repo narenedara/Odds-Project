@@ -26,19 +26,6 @@ def api_request(sport):
 
     DATE_FORMAT = 'iso'  # iso | unix
 
-    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-    #
-    # First get a list of in-season sports
-    #   The sport 'key' from the response can be used to get odds in the next request
-    #
-    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-     # if sports_response.status_code != 200:
-     #     print(f'Failed to get sports: status_code {sports_response.status_code}, response body {sports_response.text}')
-     #
-     # else:
-     #     print('List of in season sports:', sports_response.json())
-
 
     odds_response = requests.get(
         f'https://api.the-odds-api.com/v4/sports/{SPORT}/odds',
@@ -154,6 +141,16 @@ def create_df(odds_json):
     # Reset index
     df = df.reset_index(drop=True)
 
+    print(f"Length of game_list: {len(game_list)}")
+    print(game_list)
+    print(f"Number of rows in DataFrame: {len(df)}")
+    if len(game_list) > len(df):
+        game_list = game_list[:len(df)]
+        times_est = times_est[:len(df)]
+    # Make sure the lengths match
+    if len(game_list) != len(df):
+        raise ValueError("Length of game_list and number of rows in DataFrame do not match")
+
     # Make games index
     df.index = game_list
 
@@ -227,7 +224,8 @@ def get_best_odds(df,user_date,betting_sites=None):#Ex: Takes in date ex:2024-06
         betting_sites = matching_rows.columns  # If no columns provided, keep all columns
     else:
         betting_sites = betting_sites
-    matching_rows=matching_rows[betting_sites]
+    matching_rows = matching_rows[betting_sites]
+    matching_rows = matching_rows.dropna()
     if not matching_rows.empty:
         return process_odds_dataframe(matching_rows)
     else:
@@ -259,29 +257,6 @@ def format_game_results(game_results):
     return result_str
 
 
-# def main():
-#     json=api_request()
-#     df = create_df(json)
-#     date = input("Please enter the date of the game you want to look at (ex: '2024-06-15'):")
-#     bookmakers_input = input(
-#         "Please enter your bookmaker(seperated by comma) or enter nothing if you want to see all bookmakers:")
-#
-#     if bookmakers_input.lower() == 'none' or not bookmakers_input.strip():
-#         bookmaker = None
-#     else:
-#         bookmaker = [bookmaker.strip() for bookmaker in bookmakers_input.split(',')]
-#
-#     try:
-#         result = get_best_odds(df, date, bookmaker)
-#         final_result=format_game_results(result)
-#         return render_template_string(final_result)
-#
-#         # Display the result or handle it as needed
-#     except Exception as e:
-#         print("Sorry all bookmakers haven't released game odds yet")
-#         return None
-
-
 @app.route('/', methods=['GET', 'POST'])
 def get_odds():
     sports_list=get_sports()
@@ -303,7 +278,7 @@ def get_odds():
             formatted_result = format_game_results(result)
             return formatted_result
         except Exception as e:
-            return "Sorry, odds for this date have not been released or there are no events on this day"
+            return f"An error occurred: {str(e)}"
 
     return render_template_string('''
             <form method="post">

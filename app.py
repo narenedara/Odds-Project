@@ -80,7 +80,7 @@ def create_df(odds_json):
     bookmaker_data = {}
     game_list = []
     time_list = []
-    # Iterate through odds_json
+
     for game in odds_json:
         home_team = game['home_team']
         away_team = game['away_team']
@@ -92,7 +92,7 @@ def create_df(odds_json):
             if bookmaker_name not in bookmaker_data:
                 bookmaker_data[bookmaker_name] = []  # home/away/draw
 
-            # Initialize lists if bookmaker is not yet in the dictionary
+
             for market in bookmaker['markets']:
                 game_odds = [None, None, None]
                 draw_exists = False
@@ -108,13 +108,13 @@ def create_df(odds_json):
                     game_odds.pop(2)
                 bookmaker_data[bookmaker_name].append(game_odds)
     utc_tz = pytz.utc
-    # Define Eastern Standard Timezone (EST)
+
     est_tz = pytz.timezone('America/New_York')
 
-    # Initialize an empty list to store converted times
+
     times_est = []
 
-    # Loop through each UTC time string, convert to datetime object, and convert to EST
+
     for time_utc in time_list:
         dt_utc = datetime.strptime(time_utc, '%Y-%m-%dT%H:%M:%SZ')
         dt_utc = utc_tz.localize(dt_utc)
@@ -122,23 +122,23 @@ def create_df(odds_json):
         times_est.append(dt_est.strftime('%Y-%m-%d %H:%M:%S'))
     max_length = max(len(v) for v in bookmaker_data.values())
 
-    # Fill missing spots with NaN
+
     for key in bookmaker_data:
         while len(bookmaker_data[key]) < max_length:
             bookmaker_data[key].append(np.nan)
 
     # Create DataFrame
     df = pd.DataFrame(bookmaker_data)
-    # Return the element unchanged if it's not a list
 
-    # Apply the function to convert lists to tuples
+
+
     df = df.applymap(list_to_tuple)
 
-    # Drop duplicates based on tuples
+
     df = df.drop_duplicates()
 
     df = df.applymap(tuple_to_list)
-    # Reset index
+
     df = df.reset_index(drop=True)
 
     print(f"Length of game_list: {len(game_list)}")
@@ -151,10 +151,10 @@ def create_df(odds_json):
     if len(game_list) != len(df):
         raise ValueError("Length of game_list and number of rows in DataFrame do not match")
 
-    # Make games index
+
     df.index = game_list
 
-    # Add in times
+
     df.insert(loc=0, column='Date', value=times_est)
 
     return df
@@ -165,10 +165,10 @@ def get_rows(row, user_date):
     date_format = "%Y-%m-%d"
     user_date = datetime.strptime(user_date, date_format).date()
 
-    # Convert the 'date' column to datetime and extract the date part
+
     row_date = pd.to_datetime(row['Date']).date()
 
-    # Check if the date matches the user_date
+
     return row_date == user_date
 
 
@@ -181,7 +181,6 @@ def process_odds_dataframe(odds_df):
         match_name = index
         final_dict['Game'] = match_name
         results_list = []
-        #         print(match_name,row)
         home_odds_list = []
         away_odds_list = []
         draw_odds_list = []
@@ -303,7 +302,6 @@ def get_odds():
                 error_message = "Please enter a date in the present or future."
 
         if not error_message:
-            # Main Processing Block
             try:
                 json = api_request(sport)
                 df = create_df(json)

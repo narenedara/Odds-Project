@@ -239,7 +239,23 @@ def format_game_results(game_results):
         home_team = teams[0]
         away_team = teams[1]
 
-        result_str += f"Game: {game['Game']}<br>Results:<br>"
+        result_str += f'''
+        <div class="card mt-3">
+            <div class="card-header">
+                <h4>{home_team} vs. {away_team}</h4>
+            </div>
+            <div class="card-body">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Outcome</th>
+                            <th>Odds</th>
+                            <th>Bookmakers</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        '''
+
         for result in game['Results']:
             if 'home_win' in result:
                 outcome = home_team
@@ -251,61 +267,128 @@ def format_game_results(game_results):
                 outcome = "Draw"
                 odds = result['draw']
 
-            result_str += f"  {outcome}: {odds:.1f} (Bookmakers: {', '.join(result['bookmaker'])})<br>"
-        result_str += "<br>"  # Add a blank line for better readability
+            bookmakers = ', '.join(result['bookmaker'])
+            result_str += f'''
+                        <tr>
+                            <td>{outcome}</td>
+                            <td>{odds:.1f}</td>
+                            <td>{bookmakers}</td>
+                        </tr>
+            '''
+
+        result_str += '''
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        '''
 
     return result_str
 
 
 @app.route('/', methods=['GET', 'POST'])
 def get_odds():
-    sports_list=get_sports()
-    if request.method == 'POST':
-        # Get user inputs from form POST request
+    sports_list = get_sports()
+    error_message = None
+    formatted_result = None
 
+    if request.method == 'POST':
         sport = request.form.get('sport')
         date = request.form.get('date')
         bookmakers_input = request.form.get('bookmakers')
-        json = api_request(sport)
-        df = create_df(json)
-        if bookmakers_input.lower() == 'none' or not bookmakers_input.strip():
-            bookmaker = None
-        else:
-            bookmaker = [bookmaker.strip() for bookmaker in bookmakers_input.split(',')]
+        # Validate if the date is in the past
+        if date:
+            user_date_dt = datetime.strptime(date, "%Y-%m-%d").date()
+            if user_date_dt < datetime.now().date():
+                error_message = "Please enter a date in the present or future."
 
-        try:
-            result = get_best_odds(df, date, bookmaker)
-            formatted_result = format_game_results(result)
-            return formatted_result
-        except Exception as e:
-            return f"An error occurred: {str(e)}"
+        if not error_message:
+            # Main Processing Block
+            try:
+                json = api_request(sport)
+                df = create_df(json)
+                bookmaker = [bm.strip() for bm in bookmakers_input.split(
+                    ',')] if bookmakers_input.strip() and bookmakers_input.lower() != 'none' else None
+                result = get_best_odds(df, date, bookmaker)
+                formatted_result = format_game_results(result)
+            except Exception as e:
+                # Exception Handling Block
+                error_message = f"Sorry, odds for this game have not came out yet."
+                print(e)
 
     return render_template_string('''
-            <form method="post">
-                Sport: <input type="text" name="sport"><br>
-                Date: <input type="text" name="date"><br>
-                Bookmakers (comma separated): <input type="text" name="bookmakers"><br>
-                <input type="submit" value="Submit"><br>
-            </form>
-            <button type="button" onclick="showList()">Show Sports List</button>
-            <div id="sportsList" style="display:none;">
-                <ul>
-                    {% for sport in sports_list %}
-                    <li>{{ sport }}</li>
-                    {% endfor %}
-                </ul>
+        <!doctype html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+            <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+            <title>Get Odds</title>
+            <style>
+                .container {
+                    margin-top: 50px;
+                }
+                #loadingSpinner {
+                    display: none;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1 class="text-center">Sports Betting Odds Optimizer</h1>
+                <form method="post" class="mt-4">
+                    <div class="form-group">
+                        <label for="sport">Sport:</label>
+                        <input type="text" class="form-control" id="sport" name="sport" placeholder="Enter sport name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="date">Date:</label>
+                        <input type="text" class="form-control" id="date" name="date" placeholder="YYYY-MM-DD" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="bookmakers">Bookmakers (comma separated):</label>
+                        <input type="text" class="form-control" id="bookmakers" name="bookmakers" placeholder="e.g., bookmaker1, bookmaker2">
+                    </div>
+                    <button type="submit" class="btn btn-primary" onclick="showLoading()">Submit</button>
+                    <button type="button" class="btn btn-secondary" onclick="showList()">Show Sports List</button>
+                </form>
+                <div id="sportsList" style="display:none;" class="mt-3">
+                    <h4>Available Sports:</h4>
+                    <ul class="list-group">
+                        {% for sport in sports_list %}
+                        <li class="list-group-item">{{ sport }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div id="loadingSpinner" class="text-center mt-3">
+                    <div class="spinner-border" role="status">
+                        <span class="sr-only">Loading...</span>
+                    </div>
+                </div>
+                {% if error_message %}
+                <div class="alert alert-danger mt-3" role="alert">
+                    {{ error_message }}
+                </div>
+                {% endif %}
+                {% if formatted_result %}
+                <div class="mt-5">
+                    <h2 class="text-center">Game Results</h2>
+                    {{ formatted_result|safe }}
+                </div>
+                {% endif %}
             </div>
             <script>
                 function showList() {
                     var sportsList = document.getElementById("sportsList");
-                    if (sportsList.style.display === "none") {
-                        sportsList.style.display = "block";
-                    } else {
-                        sportsList.style.display = "none";
-                    }
+                    sportsList.style.display = (sportsList.style.display === "none") ? "block" : "none";
+                }
+                function showLoading() {
+                    document.getElementById("loadingSpinner").style.display = "block";
                 }
             </script>
-        ''', sports_list=sports_list)
+        </body>
+        </html>
+    ''', sports_list=sports_list, error_message=error_message, formatted_result=formatted_result)
 
 if __name__ == '__main__':
     app.run()
